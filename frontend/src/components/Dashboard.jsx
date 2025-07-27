@@ -1,122 +1,177 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Line, Bar, Pie } from 'react-chartjs-2';
-// Top of your Dashboard.jsx or a new file imported once in your project
+import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
+  CategoryScale, LinearScale, BarElement, LineElement, PointElement,
+  Title, Tooltip, Legend
 } from 'chart.js';
 
+// Register required Chart elements
 ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend
+  CategoryScale, LinearScale, BarElement, LineElement, PointElement,
+  Title, Tooltip, Legend
 );
 
-const API_URL = "http://localhost:5000/api/data";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/data";
 
 const Dashboard = ({ token, onLogout }) => {
   const [data, setData] = useState([]);
-  const [form, setForm] = useState({ date: '', revenue: 0, expenses: 0, profit: 0 });
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    axios.get(API_URL, { headers: { Authorization: 'Bearer ' + token } })
-      .then(res => setData(res.data));
-  }, [token]);
-
-  const addData = async (e) => {
-    e.preventDefault();
-    await axios.post(API_URL + '/add', form, { headers: { Authorization: 'Bearer ' + token } });
-    setForm({ date: '', revenue: 0, expenses: 0, profit: 0 });
-    const resp = await axios.get(API_URL, { headers: { Authorization: 'Bearer ' + token } });
-    setData(resp.data);
+  // Fetch all data
+  const fetchData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await axios.get(API_URL, { headers: { Authorization: 'Bearer ' + token } });
+      setData(res.data.sort((a, b) => new Date(a.date) - new Date(b.date))); // sort oldest to latest
+    } catch {
+      setError("Could not fetch data.");
+    }
+    setLoading(false);
   };
 
-  const dates = data.map(d => d.date);
-  const revenue = data.map(d => d.revenue);
-  const expenses = data.map(d => d.expenses);
-  const profit = data.map(d => d.profit);
+  useEffect(() => { fetchData(); }, [token]);
+
+  // Import from API
+  const importFromApi = async () => {
+    setImporting(true);
+    setError('');
+    try {
+      await axios.get(API_URL + '/fetch-from-api', { headers: { Authorization: 'Bearer ' + token } });
+      await fetchData();
+    } catch {
+      setError("Import from API failed – check server/API key/rate limits!");
+    }
+    setImporting(false);
+  };
+
+  // Clear all data
+  const clearAll = async () => {
+    if (!window.confirm('Are you sure you want to delete all data?')) return;
+    setClearing(true);
+    setError('');
+    try {
+      await axios.delete(API_URL + '/clear', { headers: { Authorization: 'Bearer ' + token } });
+      setData([]);
+    } catch {
+      setError("Failed to clear data.");
+    }
+    setClearing(false);
+  };
+
+  // Prepare chart data, reversed for chronological display
+  const sorted = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const dates = sorted.map(d => d.date);
+  const open = sorted.map(d => d.open);
+  const high = sorted.map(d => d.high);
+  const low = sorted.map(d => d.low);
+  const close = sorted.map(d => d.close);
+  const volume = sorted.map(d => d.volume);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-10">
-      <div className="flex justify-end mb-4">
-        <button className="px-4 py-2 bg-red-500 text-white rounded" onClick={onLogout}>Logout</button>
+    <div className="min-h-screen bg-gray-50 p-5 md:p-10">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-3 mb-6">
+        <div className="flex gap-2">
+          <button
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded shadow disabled:bg-blue-300"
+            disabled={importing || loading}
+            onClick={importFromApi}
+          >
+            {importing ? "Importing..." : "Import from API"}
+          </button>
+          <button
+            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded shadow disabled:bg-yellow-400"
+            disabled={clearing || loading}
+            onClick={clearAll}
+          >
+            {clearing ? "Clearing..." : "Clear All"}
+          </button>
+        </div>
+        <button
+          className="px-4 py-2 bg-red-500 hover:bg-red-700 text-white rounded shadow"
+          onClick={onLogout}
+        >
+          Logout
+        </button>
       </div>
-      <form onSubmit={addData} className="flex space-x-2 mb-8">
-        <input
-          className="px-2 py-1 border rounded"
-          placeholder="Date"
-          value={form.date}
-          onChange={e => setForm({ ...form, date: e.target.value })}
-        />
-        <input
-          className="px-2 py-1 border rounded"
-          placeholder="Revenue"
-          type="number"
-          value={form.revenue}
-          onChange={e => setForm({ ...form, revenue: +e.target.value })}
-        />
-        <input
-          className="px-2 py-1 border rounded"
-          placeholder="Expenses"
-          type="number"
-          value={form.expenses}
-          onChange={e => setForm({ ...form, expenses: +e.target.value })}
-        />
-        <input
-          className="px-2 py-1 border rounded"
-          placeholder="Profit"
-          type="number"
-          value={form.profit}
-          onChange={e => setForm({ ...form, profit: +e.target.value })}
-        />
-        <button type="submit" className="bg-blue-500 text-white px-4 py-1 rounded">Add Data</button>
-      </form>
-
-      <div className="grid md:grid-cols-2 gap-8">
-        <div className="bg-white p-5 rounded shadow">
-          <h2 className="text-lg font-bold mb-2">Financial Trends</h2>
-          <Line data={{
-            labels: dates,
-            datasets: [
-              { label: "Revenue", data: revenue, borderColor: "green" },
-              { label: "Expenses", data: expenses, borderColor: "red" },
-              { label: "Profit", data: profit, borderColor: "blue" }
-            ]
-          }} />
+      {error && <div className="mb-4 text-red-600 font-bold text-center">{error}</div>}
+      {loading ? (
+        <div className="text-center text-lg text-gray-500">Loading data...</div>
+      ) : (
+        data.length === 0 ? (
+          <div className="text-center text-gray-600 mb-6">
+            No data to display, please use <span className="font-semibold">Import from API</span>!
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-8">
+            {/* Prices Chart */}
+            <div className="bg-white p-5 rounded shadow">
+              <h2 className="text-lg font-bold mb-2">IBM Daily Prices</h2>
+              <Line data={{
+                labels: dates,
+                datasets: [
+                  { label: "Open", data: open, borderColor: "orange", backgroundColor: "orange" },
+                  { label: "High", data: high, borderColor: "green", backgroundColor: "green" },
+                  { label: "Low", data: low, borderColor: "red", backgroundColor: "red" },
+                  { label: "Close", data: close, borderColor: "blue", backgroundColor: "blue" }
+                ]
+              }} options={{
+                responsive: true,
+                interaction: { mode: "index", intersect: false },
+                plugins: { legend: { position: "top" }, title: { display: false } }
+              }} />
+            </div>
+            {/* Volume Bar Chart */}
+            <div className="bg-white p-5 rounded shadow">
+              <h2 className="text-lg font-bold mb-2">IBM Volume</h2>
+              <Bar data={{
+                labels: dates,
+                datasets: [
+                  { label: "Volume", data: volume, backgroundColor: "rgba(130, 130, 130, 0.7)" }
+                ]
+              }} options={{
+                responsive: true,
+                plugins: { legend: { display: false } }
+              }} />
+            </div>
+          </div>
+        )
+      )}
+      {/* Optional: Data table for inspection */}
+      {data.length > 0 && (
+        <div className="mt-12 overflow-x-auto">
+          <h2 className="text-xl font-semibold mb-2">Recent Data</h2>
+          <table className="min-w-full bg-white rounded shadow text-sm">
+            <thead>
+              <tr>
+                <th className="py-2 px-3 text-left">Date</th>
+                <th className="py-2 px-3">Open</th>
+                <th className="py-2 px-3">High</th>
+                <th className="py-2 px-3">Low</th>
+                <th className="py-2 px-3">Close</th>
+                <th className="py-2 px-3">Volume</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.slice(-30).reverse().map((row, i) => (
+                <tr key={row.date}>
+                  <td className="py-1 px-3">{row.date}</td>
+                  <td className="py-1 px-3">{row.open}</td>
+                  <td className="py-1 px-3">{row.high}</td>
+                  <td className="py-1 px-3">{row.low}</td>
+                  <td className="py-1 px-3">{row.close}</td>
+                  <td className="py-1 px-3">{row.volume}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="bg-white p-5 rounded shadow">
-          <h2 className="text-lg font-bold mb-2">Revenue Comparison</h2>
-          <Bar data={{
-            labels: dates,
-            datasets: [{ label: "Revenue", data: revenue, backgroundColor: "rgba(0,200,0,0.5)" }]
-          }} />
-        </div>
-        <div className="bg-white p-5 rounded shadow">
-          <h2 className="text-lg font-bold mb-2">Totals Breakdown</h2>
-          <Pie data={{
-            labels: ['Revenue', 'Expenses', 'Profit'],
-            datasets: [{
-              data: [revenue.reduce((a, b) => a + b, 0), expenses.reduce((a, b) => a + b, 0), profit.reduce((a, b) => a + b, 0)],
-              backgroundColor: ['green', 'red', 'blue']
-            }]
-          }} />
-        </div>
-      </div>
+      )}
     </div>
   );
 };
